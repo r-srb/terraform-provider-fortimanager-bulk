@@ -361,19 +361,22 @@ func resourceObjectFirewallAddrgrpRead(d *schema.ResourceData, m interface{}) er
 	}
 	paradict["adom"] = adomv
 
-	o, err := c.ReadObjectFirewallAddrgrp(mkey, paradict)
+	cacheKey := "/pm/config/" + adomv + "/obj/firewall/addrgrp"
+	cached, err := globalBulkCache.GetOrLoad(cacheKey, func() ([]interface{}, error) {
+		return c.BulkGetObjectFirewallAddrgrp(adomv)
+	})
 	if err != nil {
-		d.SetId("")
 		return fmt.Errorf("Error reading ObjectFirewallAddrgrp resource: %v", err)
 	}
-
-	if o == nil {
+	o, ok := cached[mkey]
+	if !ok {
 		log.Printf("[WARN] resource (%s) not found, removing from state", d.Id())
 		d.SetId("")
 		return nil
 	}
+	oMap := o.(map[string]interface{})
 
-	err = refreshObjectObjectFirewallAddrgrp(d, o)
+	err = refreshObjectObjectFirewallAddrgrp(d, oMap)
 	if err != nil {
 		return fmt.Errorf("Error reading ObjectFirewallAddrgrp resource from API: %v", err)
 	}

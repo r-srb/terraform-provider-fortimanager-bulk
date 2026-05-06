@@ -331,19 +331,22 @@ func resourceObjectFirewallAddrgrp6Read(d *schema.ResourceData, m interface{}) e
 	}
 	paradict["adom"] = adomv
 
-	o, err := c.ReadObjectFirewallAddrgrp6(mkey, paradict)
+	cacheKey := "/pm/config/" + adomv + "/obj/firewall/addrgrp6"
+	cached, err := globalBulkCache.GetOrLoad(cacheKey, func() ([]interface{}, error) {
+		return c.BulkGetObjectFirewallAddrgrp6(adomv)
+	})
 	if err != nil {
-		d.SetId("")
 		return fmt.Errorf("Error reading ObjectFirewallAddrgrp6 resource: %v", err)
 	}
-
-	if o == nil {
+	o, ok := cached[mkey]
+	if !ok {
 		log.Printf("[WARN] resource (%s) not found, removing from state", d.Id())
 		d.SetId("")
 		return nil
 	}
+	oMap := o.(map[string]interface{})
 
-	err = refreshObjectObjectFirewallAddrgrp6(d, o)
+	err = refreshObjectObjectFirewallAddrgrp6(d, oMap)
 	if err != nil {
 		return fmt.Errorf("Error reading ObjectFirewallAddrgrp6 resource from API: %v", err)
 	}

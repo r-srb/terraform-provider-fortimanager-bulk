@@ -721,19 +721,22 @@ func resourceObjectFirewallAddressRead(d *schema.ResourceData, m interface{}) er
 	}
 	paradict["adom"] = adomv
 
-	o, err := c.ReadObjectFirewallAddress(mkey, paradict)
+	cacheKey := "/pm/config/" + adomv + "/obj/firewall/address"
+	cached, err := globalBulkCache.GetOrLoad(cacheKey, func() ([]interface{}, error) {
+		return c.BulkGetObjectFirewallAddress(adomv)
+	})
 	if err != nil {
-		d.SetId("")
 		return fmt.Errorf("Error reading ObjectFirewallAddress resource: %v", err)
 	}
-
-	if o == nil {
+	o, ok := cached[mkey]
+	if !ok {
 		log.Printf("[WARN] resource (%s) not found, removing from state", d.Id())
 		d.SetId("")
 		return nil
 	}
+	oMap := o.(map[string]interface{})
 
-	err = refreshObjectObjectFirewallAddress(d, o)
+	err = refreshObjectObjectFirewallAddress(d, oMap)
 	if err != nil {
 		return fmt.Errorf("Error reading ObjectFirewallAddress resource from API: %v", err)
 	}
