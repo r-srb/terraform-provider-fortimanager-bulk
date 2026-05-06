@@ -713,13 +713,11 @@ func resourceObjectFirewallAddressRead(d *schema.ResourceData, m interface{}) er
 	c := m.(*FortiClient).Client
 	c.Retries = 1
 
-	paradict := make(map[string]string)
 	cfg := m.(*FortiClient).Cfg
 	adomv, err := adomChecking(cfg, d)
 	if err != nil {
 		return fmt.Errorf("Error adom configuration: %v", err)
 	}
-	paradict["adom"] = adomv
 
 	cacheKey := "/pm/config/" + adomv + "/obj/firewall/address"
 	cached, err := globalBulkCache.GetOrLoad(cacheKey, func() ([]interface{}, error) {
@@ -734,7 +732,12 @@ func resourceObjectFirewallAddressRead(d *schema.ResourceData, m interface{}) er
 		d.SetId("")
 		return nil
 	}
-	oMap := o.(map[string]interface{})
+	oMap, ok := o.(map[string]interface{})
+	if !ok {
+		log.Printf("[WARN] resource (%s) unexpected cache entry type, removing from state", d.Id())
+		d.SetId("")
+		return nil
+	}
 
 	err = refreshObjectObjectFirewallAddress(d, oMap)
 	if err != nil {
