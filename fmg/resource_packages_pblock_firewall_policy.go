@@ -1416,13 +1416,11 @@ func resourcePackagesPblockFirewallPolicyRead(d *schema.ResourceData, m interfac
 	c := m.(*FortiClient).Client
 	c.Retries = 1
 
-	paradict := make(map[string]string)
 	cfg := m.(*FortiClient).Cfg
 	adomv, err := adomChecking(cfg, d)
 	if err != nil {
 		return fmt.Errorf("Error adom configuration: %v", err)
 	}
-	paradict["adom"] = adomv
 
 	pblock := d.Get("pblock").(string)
 	if pblock == "" {
@@ -1434,21 +1432,28 @@ func resourcePackagesPblockFirewallPolicyRead(d *schema.ResourceData, m interfac
 			return fmt.Errorf("Error set params pblock: %v", err)
 		}
 	}
-	paradict["pblock"] = pblock
 
-	o, err := c.ReadPackagesPblockFirewallPolicy(mkey, paradict)
+	cacheKey := "/pm/config/" + adomv + "/pblock/" + pblock + "/firewall/policy"
+	cached, err := globalBulkCache.GetOrLoadPolicyIndex(cacheKey, func() ([]interface{}, error) {
+		return c.BulkGetPackagesPblockFirewallPolicy(adomv, pblock)
+	})
 	if err != nil {
-		d.SetId("")
 		return fmt.Errorf("Error reading PackagesPblockFirewallPolicy resource: %v", err)
 	}
-
-	if o == nil {
+	o, ok := cached[mkey]
+	if !ok {
 		log.Printf("[WARN] resource (%s) not found, removing from state", d.Id())
 		d.SetId("")
 		return nil
 	}
+	oMap, ok := o.(map[string]interface{})
+	if !ok {
+		log.Printf("[WARN] resource (%s) unexpected cache entry type, removing from state", d.Id())
+		d.SetId("")
+		return nil
+	}
 
-	err = refreshObjectPackagesPblockFirewallPolicy(d, o)
+	err = refreshObjectPackagesPblockFirewallPolicy(d, oMap)
 	if err != nil {
 		return fmt.Errorf("Error reading PackagesPblockFirewallPolicy resource from API: %v", err)
 	}

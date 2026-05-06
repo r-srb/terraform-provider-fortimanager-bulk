@@ -1,6 +1,7 @@
 package fortimanager
 
 import (
+	"fmt"
 	"sync"
 )
 
@@ -66,4 +67,46 @@ func (bc *BulkCache) Invalidate(endpoint string) {
 	bc.mu.Lock()
 	delete(bc.store, endpoint)
 	bc.mu.Unlock()
+}
+
+// GetOrLoadPolicyIndex is like GetOrLoad but indexes objects by their "policyid"
+// field (integer) rather than "name". The store key is endpoint + "__policyid" to
+// avoid collisions with any name-indexed cache for the same endpoint.
+// policyid values of type float64 are formatted as decimal integers; string values
+// are used as-is.
+func (bc *BulkCache) GetOrLoadPolicyIndex(endpoint string, loader func() ([]interface{}, error)) (map[string]interface{}, error) {
+	storeKey := endpoint + "__policyid"
+	bc.mu.RLock()
+	if cached, ok := bc.store[storeKey]; ok {
+		bc.mu.RUnlock()
+		return cached, nil
+	}
+	bc.mu.RUnlock()
+
+	bc.mu.Lock()
+	defer bc.mu.Unlock()
+	if cached, ok := bc.store[storeKey]; ok {
+		return cached, nil
+	}
+
+	items, err := loader()
+	if err != nil {
+		return nil, err
+	}
+
+	indexed := make(map[string]interface{}, len(items))
+	for _, item := range items {
+		obj, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		switch v := obj["policyid"].(type) {
+		case float64:
+			indexed[fmt.Sprintf("%d", int(v))] = obj
+		case string:
+			indexed[v] = obj
+		}
+	}
+	bc.store[storeKey] = indexed
+	return indexed, nil
 }
