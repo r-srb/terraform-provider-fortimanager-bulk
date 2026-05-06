@@ -158,3 +158,102 @@ func TestInvalidate_ForcesReload(t *testing.T) {
 		t.Errorf("expected loader called twice (after invalidation), got %d", calls)
 	}
 }
+
+func TestGetOrLoadPolicyIndex_LoadsOnFirstCall(t *testing.T) {
+	c := freshCache()
+	calls := 0
+	loader := func() ([]interface{}, error) {
+		calls++
+		return []interface{}{
+			map[string]interface{}{"policyid": float64(1), "name": "allow-all"},
+			map[string]interface{}{"policyid": float64(2), "name": "deny-all"},
+		}, nil
+	}
+
+	result, err := c.GetOrLoadPolicyIndex("test-ep", loader)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if calls != 1 {
+		t.Errorf("expected loader called once, got %d", calls)
+	}
+	if len(result) != 2 {
+		t.Errorf("expected 2 entries, got %d", len(result))
+	}
+	if _, ok := result["1"]; !ok {
+		t.Error("expected key '1' in result")
+	}
+	if _, ok := result["2"]; !ok {
+		t.Error("expected key '2' in result")
+	}
+}
+
+func TestGetOrLoadPolicyIndex_CachesAfterFirstCall(t *testing.T) {
+	c := freshCache()
+	calls := 0
+	loader := func() ([]interface{}, error) {
+		calls++
+		return []interface{}{map[string]interface{}{"policyid": float64(10)}}, nil
+	}
+
+	c.GetOrLoadPolicyIndex("ep", loader)
+	c.GetOrLoadPolicyIndex("ep", loader)
+	c.GetOrLoadPolicyIndex("ep", loader)
+
+	if calls != 1 {
+		t.Errorf("expected loader called exactly once across 3 calls, got %d", calls)
+	}
+}
+
+func TestGetOrLoadPolicyIndex_IsolatedFromNameIndex(t *testing.T) {
+	c := freshCache()
+	nameLoader := func() ([]interface{}, error) {
+		return []interface{}{map[string]interface{}{"name": "policy-a"}}, nil
+	}
+	policyLoader := func() ([]interface{}, error) {
+		return []interface{}{map[string]interface{}{"policyid": float64(42)}}, nil
+	}
+
+	nameResult, _ := c.GetOrLoad("ep", nameLoader)
+	policyResult, _ := c.GetOrLoadPolicyIndex("ep", policyLoader)
+
+	if _, ok := nameResult["policy-a"]; !ok {
+		t.Error("expected 'policy-a' in name-indexed cache")
+	}
+	if _, ok := policyResult["42"]; !ok {
+		t.Error("expected '42' in policy-indexed cache")
+	}
+	// The two indexes must not bleed into each other
+	if _, ok := nameResult["42"]; ok {
+		t.Error("policyid key '42' should not appear in name-indexed cache")
+	}
+	if _, ok := policyResult["policy-a"]; ok {
+		t.Error("name key 'policy-a' should not appear in policy-indexed cache")
+	}
+}
+
+func TestGetOrLoadPolicyIndex_MissingPolicyID_Skipped(t *testing.T) {
+	c := freshCache()
+	loader := func() ([]interface{}, error) {
+		return []interface{}{
+			map[string]interface{}{"policyid": float64(1)},
+			map[string]interface{}{"name": "no-policyid"},   // skipped
+			"not a map",                                      // skipped
+			map[string]interface{}{"policyid": "stringid"},  // accepted as string
+		}, nil
+	}
+
+	result, err := c.GetOrLoadPolicyIndex("ep", loader)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result) != 2 {
+		t.Errorf("expected 2 valid entries, got %d", len(result))
+	}
+	if _, ok := result["1"]; !ok {
+		t.Error("expected key '1' in result")
+	}
+	if _, ok := result["stringid"]; !ok {
+		t.Error("expected key 'stringid' in result")
+	}
+}

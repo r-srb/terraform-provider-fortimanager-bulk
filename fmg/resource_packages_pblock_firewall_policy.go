@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
@@ -1433,7 +1434,8 @@ func resourcePackagesPblockFirewallPolicyRead(d *schema.ResourceData, m interfac
 		}
 	}
 
-	cacheKey := "/pm/config/" + adomv + "/pblock/" + pblock + "/firewall/policy"
+	escapedPblock := strings.ReplaceAll(pblock, "/", "\\/")
+	cacheKey := "/pm/config/" + adomv + "/pblock/" + escapedPblock + "/firewall/policy"
 	cached, err := globalBulkCache.GetOrLoadPolicyIndex(cacheKey, func() ([]interface{}, error) {
 		return c.BulkGetPackagesPblockFirewallPolicy(adomv, pblock)
 	})
