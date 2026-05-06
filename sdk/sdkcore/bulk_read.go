@@ -22,6 +22,9 @@ func decodeDataList(result map[string]interface{}) ([]interface{}, error) {
 		return nil, fmt.Errorf("unexpected result[0] shape in API response")
 	}
 
+	// This status-code check defends against direct callers of decodeDataList.
+	// When called via bulkReadPage, sendRequest already handles non-zero status
+	// errors via fortiAPIErrorFormat before we reach this point.
 	if status, ok := item["status"].(map[string]interface{}); ok {
 		if code, ok := status["code"].(float64); ok && code != 0 {
 			msg, _ := status["message"].(string)
@@ -63,7 +66,7 @@ func (c *FortiSDKClient) bulkReadPage(path string, offset, count int) ([]interfa
 }
 
 // bulkReadAllWithPageSize fetches all items at path using the given page size.
-// Exported only for testing; production code uses bulkReadAll.
+// Unexported but accessible for testing within the same package; production code uses bulkReadAll.
 func (c *FortiSDKClient) bulkReadAllWithPageSize(path string, pageSize int) ([]interface{}, error) {
 	var all []interface{}
 	for offset := 0; ; offset += pageSize {
@@ -79,6 +82,7 @@ func (c *FortiSDKClient) bulkReadAllWithPageSize(path string, pageSize int) ([]i
 	return all, nil
 }
 
+// bulkReadAll fetches all items at path using the default bulkPageSize.
 func (c *FortiSDKClient) bulkReadAll(path string) ([]interface{}, error) {
 	return c.bulkReadAllWithPageSize(path, bulkPageSize)
 }

@@ -68,13 +68,28 @@ func TestBulkReadAll_Pagination(t *testing.T) {
 		{{"name": "a1"}, {"name": "a2"}, {"name": "a3"}},
 		{{"name": "a4"}},
 	}
+	expectedOffsets := []int{0, pageSize}
 	c, stop := makeTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		var body map[string]interface{}
 		json.NewDecoder(r.Body).Decode(&body)
 		params := body["params"].([]interface{})
 		p := params[0].(map[string]interface{})
-		_ = p["range"] // verify range key is present
+
+		rng, ok := p["range"].([]interface{})
+		if !ok {
+			t.Errorf("call %d: range key missing or wrong type", callCount)
+		} else {
+			gotOffset := int(rng[0].(float64))
+			gotCount := int(rng[1].(float64))
+			if gotOffset != expectedOffsets[callCount] {
+				t.Errorf("call %d: expected offset %d, got %d", callCount, expectedOffsets[callCount], gotOffset)
+			}
+			if gotCount != pageSize {
+				t.Errorf("call %d: expected count %d, got %d", callCount, pageSize, gotCount)
+			}
+		}
+
 		w.Write(jsonRPCListResponse(pages[callCount]))
 		callCount++
 	}))
@@ -89,6 +104,36 @@ func TestBulkReadAll_Pagination(t *testing.T) {
 	}
 	if callCount != 2 {
 		t.Errorf("expected 2 HTTP calls, got %d", callCount)
+	}
+}
+
+func TestBulkReadAll_ExactMultiple(t *testing.T) {
+	// When total items == pageSize exactly, the loop fetches a second page
+	// that returns 0 items (0 < pageSize → break). This tests the boundary
+	// case: 3 items with pageSize=3 should produce exactly 2 HTTP calls
+	// and return all 3 items.
+	pageSize := 3
+	callCount := 0
+	pages := [][]map[string]interface{}{
+		{{"name": "a1"}, {"name": "a2"}, {"name": "a3"}},
+		{}, // second page: 0 items → signals end of data
+	}
+	c, stop := makeTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(jsonRPCListResponse(pages[callCount]))
+		callCount++
+	}))
+	defer stop()
+
+	result, err := c.bulkReadAllWithPageSize("/pm/config/adom/TEST/obj/firewall/address", pageSize)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result) != pageSize {
+		t.Fatalf("expected %d items, got %d", pageSize, len(result))
+	}
+	if callCount != 2 {
+		t.Errorf("expected 2 HTTP calls (full page + empty page), got %d", callCount)
 	}
 }
 
