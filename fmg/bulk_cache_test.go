@@ -111,21 +111,34 @@ func TestGetOrLoad_ConcurrentCallsSingleLoad(t *testing.T) {
 		return []interface{}{map[string]interface{}{"name": "x"}}, nil
 	}
 
+	results := make([]map[string]interface{}, 20)
 	var wg sync.WaitGroup
 	for i := 0; i < 20; i++ {
+		i := i
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			c.GetOrLoad("ep", loader)
+			r, _ := c.GetOrLoad("ep", loader)
+			mu.Lock()
+			results[i] = r
+			mu.Unlock()
 		}()
 	}
 	wg.Wait()
 
-	// Due to double-checked locking, loader may be called more than once
-	// but only during the initial race window. After that: zero extra calls.
-	// The important invariant: all 20 goroutines get the same cached result.
-	if calls < 1 {
-		t.Error("expected loader called at least once")
+	// The loader is invoked inside the write lock, so only one goroutine can
+	// execute it at a time. The double-check ensures it is called exactly once.
+	if calls != 1 {
+		t.Errorf("expected loader called exactly once, got %d", calls)
+	}
+	// All 20 goroutines must receive the populated cache with the same entry.
+	for i, r := range results {
+		if len(r) != 1 {
+			t.Errorf("goroutine %d: expected 1 entry in result, got %d", i, len(r))
+		}
+		if _, ok := r["x"]; !ok {
+			t.Errorf("goroutine %d: expected key 'x' in result", i)
+		}
 	}
 }
 
