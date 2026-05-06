@@ -209,27 +209,32 @@ func resourceObjectFirewallServiceGroupRead(d *schema.ResourceData, m interface{
 	c := m.(*FortiClient).Client
 	c.Retries = 1
 
-	paradict := make(map[string]string)
 	cfg := m.(*FortiClient).Cfg
 	adomv, err := adomChecking(cfg, d)
 	if err != nil {
 		return fmt.Errorf("Error adom configuration: %v", err)
 	}
-	paradict["adom"] = adomv
 
-	o, err := c.ReadObjectFirewallServiceGroup(mkey, paradict)
+	cacheKey := "/pm/config/" + adomv + "/obj/firewall/service/group"
+	cached, err := globalBulkCache.GetOrLoad(cacheKey, func() ([]interface{}, error) {
+		return c.BulkGetObjectFirewallServiceGroup(adomv)
+	})
 	if err != nil {
-		d.SetId("")
 		return fmt.Errorf("Error reading ObjectFirewallServiceGroup resource: %v", err)
 	}
-
-	if o == nil {
+	o, ok := cached[mkey]
+	if !ok {
 		log.Printf("[WARN] resource (%s) not found, removing from state", d.Id())
 		d.SetId("")
 		return nil
 	}
-
-	err = refreshObjectObjectFirewallServiceGroup(d, o)
+	oMap, ok := o.(map[string]interface{})
+	if !ok {
+		log.Printf("[WARN] resource (%s) unexpected cache entry type, removing from state", d.Id())
+		d.SetId("")
+		return nil
+	}
+	err = refreshObjectObjectFirewallServiceGroup(d, oMap)
 	if err != nil {
 		return fmt.Errorf("Error reading ObjectFirewallServiceGroup resource from API: %v", err)
 	}
